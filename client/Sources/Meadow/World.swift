@@ -43,6 +43,8 @@ final class World {
     private var lastFrameAt: Double = 0
     private var interval: Double = 0.05
     private(set) var started = false
+    private(set) var dayPhase: Float = 0.15
+    private(set) var seasonPhase: Float = 0
 
     let director = CameraDirector()
 
@@ -65,6 +67,8 @@ final class World {
         grassW = frame.grassW
         grassH = frame.grassH
         grassBytes = frame.grass
+        dayPhase = frame.dayPhase
+        seasonPhase = frame.seasonPhase
 
         var seen = Set<UInt16>()
         seen.reserveCapacity(frame.agents.count)

@@ -5,10 +5,11 @@ import simd
 struct Uniforms {
     var vp: matrix_float4x4
     var cam: SIMD4<Float>
-    var sun: SIMD4<Float>
+    var sun: SIMD4<Float>       // xyz light dir, w light intensity
     var camRight: SIMD4<Float>
     var camUp: SIMD4<Float>
-    var species: SIMD4<Float>
+    var species: SIMD4<Float>   // x species id for the current draw
+    var env: SIMD4<Float>       // dayPhase, daylight 0..1, nightGlow 0..1, time
 }
 
 final class Renderer: NSObject, MTKViewDelegate {
@@ -49,6 +50,45 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var lastDrawTime: Double = 0
 
     private var aspect: Float = 16.0 / 9.0
+
+    // Fireflies: purely client-side ambience, visible only at night.
+    private struct Firefly {
+        var x: Float
+        var z: Float
+        var phase: Float
+        var speed: Float
+    }
+    private var fireflies: [Firefly] = {
+        var rng = SystemRandomNumberGenerator()
+        return (0..<70).map { _ in
+            Firefly(
+                x: Float.random(in: -Scenery.fieldX...Scenery.fieldX),
+                z: Float.random(in: -Scenery.fieldZ...Scenery.fieldZ),
+                phase: Float.random(in: 0...6.28),
+                speed: Float.random(in: 0.5...1.4)
+            )
+        }
+    }()
+
+    private func fireflyVerts(nightGlow: Float, time: Float, into out: inout [FXVertex]) {
+        guard nightGlow > 0.05 else { return }
+        for f in fireflies {
+            let t = time * f.speed + f.phase
+            let x = f.x + sin(t * 0.7) * 2.2
+            let z = f.z + cos(t * 0.9) * 2.2
+            let y = 1.2 + sin(t * 1.3) * 0.5
+            let blink = 0.5 + 0.5 * sin(t * 2.1)
+            let center = SIMD3<Float>(x, y, z)
+            let corners: [(Float, Float)] = [(-1, -1), (1, -1), (1, 1), (-1, -1), (1, 1), (-1, 1)]
+            for (cx, cy) in corners {
+                out.append(FXVertex(
+                    center: center,
+                    corner: SIMD2<Float>(cx, cy),
+                    data: SIMD4<Float>(4, blink * nightGlow, 0, 0.22)
+                ))
+            }
+        }
+    }
 
     init(view: MTKView) {
         if let inputView = view as? InputView {
@@ -208,20 +248,41 @@ final class Renderer: NSObject, MTKViewDelegate {
             }
         }
 
+        // Day cycle: sun elevation follows the phase; at night a dim bluish
+        // moon light takes over so the scene never goes fully black.
+        let day = world.dayPhase
+        let elev = sin(2 * Float.pi * day)
+        let daylight = smoothstep(-0.12, 0.25, elev)
+        let nightGlow = 1 - daylight
+
+        let azimuth = 2 * Float.pi * day - Float.pi / 2
+        let sunDir: SIMD3<Float>
+        let intensity: Float
+        if elev > 0.02 {
+            sunDir = simd_normalize(SIMD3<Float>(cos(azimuth) * 0.7, max(elev, 0.15), sin(azimuth) * 0.5))
+            intensity = 0.4 + 0.6 * daylight
+        } else {
+            sunDir = simd_normalize(SIMD3<Float>(0.3, 0.8, -0.4))
+            intensity = 0.22
+        }
+
+        let time = Float(CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 1000))
+
         var uni = Uniforms(
             vp: vp,
-            cam: SIMD4<Float>(cam.x, cam.y, cam.z,
-                              Float(CFAbsoluteTimeGetCurrent().truncatingRemainder(dividingBy: 1000))),
-            sun: SIMD4<Float>(simd_normalize(SIMD3<Float>(0.45, 0.85, 0.3)), 0),
+            cam: SIMD4<Float>(cam.x, cam.y, cam.z, time),
+            sun: SIMD4<Float>(sunDir, intensity),
             camRight: SIMD4<Float>(camRight, 0),
             camUp: SIMD4<Float>(camUp, 0),
-            species: SIMD4<Float>(0, 0, 0, 0)
+            species: SIMD4<Float>(0, 0, 0, 0),
+            env: SIMD4<Float>(day, daylight, nightGlow, time)
         )
 
         // sky backdrop
         enc.setDepthStencilState(skyDepthState)
         enc.setCullMode(.none)
         enc.setRenderPipelineState(skyPipeline)
+        enc.setFragmentBytes(&uni, length: MemoryLayout<Uniforms>.stride, index: 2)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         enc.setDepthStencilState(depthState)
@@ -250,15 +311,18 @@ final class Renderer: NSObject, MTKViewDelegate {
                            vertexCount: pineCount, instanceCount: pineInstanceCount)
 
         // FX
-        if !fxVerts.isEmpty {
+        var allFX = fxVerts
+        fireflyVerts(nightGlow: nightGlow, time: time, into: &allFX)
+
+        if !allFX.isEmpty {
             enc.setDepthStencilState(fxDepthState)
             enc.setRenderPipelineState(fxPipeline)
-            let buf = device.makeBuffer(bytes: fxVerts,
-                                        length: MemoryLayout<FXVertex>.stride * fxVerts.count,
+            let buf = device.makeBuffer(bytes: allFX,
+                                        length: MemoryLayout<FXVertex>.stride * allFX.count,
                                         options: .storageModeShared)!
             enc.setVertexBuffer(buf, offset: 0, index: 0)
             enc.setVertexBytes(&uni, length: MemoryLayout<Uniforms>.stride, index: 2)
-            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: fxVerts.count)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: allFX.count)
         }
 
         enc.endEncoding()

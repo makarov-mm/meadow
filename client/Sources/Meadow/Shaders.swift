@@ -11,10 +11,11 @@ using namespace metal;
 struct Uniforms {
     float4x4 vp;
     float4 cam;       // xyz eye, w time
-    float4 sun;       // xyz light dir
+    float4 sun;       // xyz light dir, w intensity
     float4 camRight;
     float4 camUp;
     float4 species;   // x: species id for this draw call (0 deer, 1 wolf, 2 bush, 3 pine)
+    float4 env;       // dayPhase, daylight 0..1, nightGlow 0..1, time
 };
 
 struct VIn {
@@ -62,11 +63,42 @@ vertex SkyOut v_sky(uint vid [[vertex_id]]) {
     return o;
 }
 
-fragment float4 f_sky(SkyOut in [[stage_in]]) {
+static float hash12(float2 p) {
+    p = fract(p * float2(443.897, 441.423));
+    p += dot(p, p + 19.19);
+    return fract(p.x * p.y);
+}
+
+fragment float4 f_sky(SkyOut in [[stage_in]],
+                      constant Uniforms& U [[buffer(2)]]) {
     float t = clamp(in.uv.y, 0.0, 1.0);
-    float3 horizon = float3(0.82, 0.88, 0.86);
-    float3 zenith  = float3(0.45, 0.66, 0.85);
+    float daylight = U.env.y;
+    float night = U.env.z;
+    float day = U.env.x;
+
+    float3 dayHorizon = float3(0.82, 0.88, 0.86);
+    float3 dayZenith  = float3(0.45, 0.66, 0.85);
+    float3 duskHorizon = float3(0.95, 0.55, 0.3);
+    float3 duskZenith  = float3(0.35, 0.3, 0.5);
+    float3 nightHorizon = float3(0.08, 0.1, 0.17);
+    float3 nightZenith  = float3(0.02, 0.03, 0.08);
+
+    // dusk factor peaks around dawn (day 0) and dusk (day 0.5)
+    float e = sin(6.2831853 * day);
+    float dusk = 1.0 - smoothstep(0.0, 0.35, fabs(e));
+
+    float3 horizon = mix(mix(dayHorizon, nightHorizon, night), duskHorizon, dusk * 0.8);
+    float3 zenith  = mix(mix(dayZenith, nightZenith, night), duskZenith, dusk * 0.6);
     float3 col = mix(horizon, zenith, smoothstep(0.05, 0.85, t));
+
+    // stars fade in at night, gentle twinkle
+    if (night > 0.2) {
+        float2 sp = in.uv * float2(240.0, 130.0);
+        float h = hash12(floor(sp));
+        float star = step(0.995, h);
+        float tw = 0.6 + 0.4 * sin(U.env.w * 2.0 + h * 40.0);
+        col += star * tw * night * smoothstep(0.15, 0.5, t);
+    }
     return float4(col, 1.0);
 }
 
@@ -178,9 +210,12 @@ vertex VOut v_char(uint vid [[vertex_id]],
 
     float3 L = normalize(U.sun.xyz);
     float diff = max(dot(normalize(n), L), 0.0);
-    float3 lit = base * (0.45 + 0.65 * diff);
+    float amb = 0.18 + 0.3 * U.env.y;
+    float3 lit = base * (amb + 0.65 * diff * U.sun.w);
+    // moonlight tint at night
+    lit = mix(lit, lit * float3(0.75, 0.82, 1.1), U.env.z * 0.6);
 
-    float3 bg = float3(0.8, 0.86, 0.85);
+    float3 bg = mix(float3(0.8, 0.86, 0.85), float3(0.07, 0.09, 0.15), U.env.z);
     float d = distance(world, U.cam.xyz);
     lit = mix(lit, bg, smoothstep(180.0, 420.0, d));
 
@@ -268,7 +303,10 @@ fragment float4 f_ground(GOut in [[stage_in]],
         col = mix(col, float3(0.62, 0.55, 0.38), sh * 0.8);
     }
 
-    float3 bg = float3(0.8, 0.86, 0.85);
+    col *= (0.25 + 0.75 * U.env.y);
+    col = mix(col, col * float3(0.7, 0.8, 1.15), U.env.z * 0.55);
+
+    float3 bg = mix(float3(0.8, 0.86, 0.85), float3(0.07, 0.09, 0.15), U.env.z);
     float d = distance(in.world, U.cam.xyz);
     col = mix(col, bg, smoothstep(180.0, 460.0, d));
     return float4(col, 1.0);
@@ -321,10 +359,14 @@ fragment float4 f_fx(FXOut in [[stage_in]]) {
         // starvation: gray puff
         float a = smoothstep(1.0, 0.3, r) * (1.0 - u) * 0.6;
         return float4(0.5, 0.5, 0.5, a);
-    } else {
+    } else if (kind < 3.5) {
         // berry sparkle
         float a = smoothstep(0.7, 0.0, r) * (1.0 - u);
         return float4(0.95, 0.4, 0.45, a);
+    } else {
+        // firefly: u carries brightness, not age
+        float a = smoothstep(1.0, 0.0, r) * u;
+        return float4(0.85, 0.95, 0.45, a);
     }
 }
 """

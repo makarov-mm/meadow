@@ -78,6 +78,19 @@ and die of starvation or old age.
 bushes. Grazed cells visibly turn brown on the ground and green back over
 time, so you can watch the herds strip a patch and move on.
 
+**Day and night.** The world runs a 3 minute day cycle. After dark, deer
+detection range drops (darkness favors the hunter), well-fed deer bed down in
+tight huddles, and wolves hunt more eagerly. Nights are when most kills
+happen. The client follows along: the sun sweeps the sky, dusk goes orange,
+stars come out, the scene shifts to bluish moonlight and fireflies drift over
+the grass.
+
+**Seasons.** Grass regrowth is not uniform: a fertile band sweeps across the
+field over a 10 minute cycle, and grass outside it withers toward a dry
+floor. Herds follow the food, so the whole population migrates across the map
+season after season. There is no migration code in the herbivore; it falls
+out of the grazing behavior plus a moving resource.
+
 **Self-balancing.** The energy economy produces Lotka-Volterra style dynamics:
 prey density up, hunting gets easier, wolves breed, prey density down, wolves
 starve. Birth rates are damped by population density on both sides. As a
@@ -85,9 +98,10 @@ final guarantee for an eternally running scene, a small group migrates in from
 the field edge if either species collapses below a floor.
 
 In headless accelerated runs the system settles into a live equilibrium:
-deer oscillating around 150-200, wolves 10-14 with steady generational
-turnover, grass stable around 0.8, and a kill somewhere on the field every few
-seconds. That pacing is what feeds the camera.
+deer breathing between 150 and 190 in step with the seasons, wolves 11-12
+with steady generational turnover, grass swinging 0.55-0.8 as the fertile
+band moves, and a kill somewhere on the field every few seconds. That pacing
+is what feeds the camera.
 
 ## Two bugs worth remembering
 
@@ -153,7 +167,5 @@ and deaths, which makes headless balance runs measurable instead of vibes.
 
 ## Ideas for later
 
-- Day and night cycle with different predator behavior after dark.
 - A web viewer speaking the same protocol.
-- Seasons: grass regrowth rate drifting over long periods, forcing herd
-  migration across the field.
+- Weather: rain bursts that accelerate regrowth where they pass.

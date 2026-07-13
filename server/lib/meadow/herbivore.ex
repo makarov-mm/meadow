@@ -45,7 +45,7 @@ defmodule Meadow.Herbivore do
 
     neighbors = Meadow.Grid.nearby(grid, a.x, a.z)
 
-    {flee_x, flee_z, panic} = flee_vector(a, neighbors)
+    {flee_x, flee_z, panic} = flee_vector(a, neighbors, ctx.night)
 
     {ax, az, state, a, ctx} =
       if panic > 0.01 do
@@ -123,6 +123,10 @@ defmodule Meadow.Herbivore do
     hungry = a.energy < 185.0
 
     cond do
+      ctx.night and not hungry ->
+        # bed down for the night; cohesion below keeps the herd huddled
+        {0.0, 0.0, 4, a, ctx}
+
       hungry and berry_nearby(a, ctx) != nil ->
         seek_berry(a, ctx)
 
@@ -139,7 +143,7 @@ defmodule Meadow.Herbivore do
 
   defp graze(a, ctx) do
     {grass, eaten} = Food.graze(ctx.grass, a.x, a.z, 0.9 * ctx.dt)
-    a = %{a | energy: min(a.energy + eaten * 95.0, 255.0)}
+    a = %{a | energy: min(a.energy + eaten * 105.0, 255.0)}
     {0.0, 0.0, 0, a, %{ctx | grass: grass}}
   end
 
@@ -192,14 +196,16 @@ defmodule Meadow.Herbivore do
 
   # ------------------------------------------------------------- forces
 
-  defp flee_vector(a, neighbors) do
+  defp flee_vector(a, neighbors, night) do
+    detect = if night, do: @detect_pred * 0.68, else: @detect_pred
+
     Enum.reduce(neighbors, {0.0, 0.0, 0.0}, fn n, {fx, fz, p} = acc ->
       if n.species == 1 do
         d2 = dist2(a.x, a.z, n.x, n.z)
 
-        if d2 < @detect_pred * @detect_pred do
+        if d2 < detect * detect do
           d = :math.sqrt(d2) + 0.001
-          w = (@detect_pred - d) / @detect_pred
+          w = (detect - d) / detect
           {fx + (a.x - n.x) / d * w, fz + (a.z - n.z) / d * w, max(p, w)}
         else
           acc
@@ -297,7 +303,7 @@ defmodule Meadow.Herbivore do
     pop = ctx.herb_count
     damp = max(0.0, 1.0 - pop / Const.herb_cap())
 
-    if a.energy > 205.0 and a.age > @adult_age * 0.8 and
+    if a.energy > 190.0 and a.age > @adult_age * 0.8 and
          :rand.uniform() < 0.020 * ctx.dt * damp * 20 do
       calf = new(ctx.next_id, a.x + rnd(2), a.z + rnd(2), 0.0)
       calf = %{calf | energy: 95.0}

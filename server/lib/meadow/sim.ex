@@ -43,6 +43,7 @@ defmodule Meadow.Sim do
     state = %{
       tick: 0,
       tick_ms: tick_ms,
+      world_t: 0.0,
       agents: agents,
       bushes: bushes,
       grass: Food.new_grass(),
@@ -70,7 +71,12 @@ defmodule Meadow.Sim do
 
   @impl true
   def handle_info(:tick, s) do
-    grass = Food.regrow(s.grass, @dt)
+    world_t = s.world_t + @dt
+    day_phase = Const.day_phase(world_t)
+    season_phase = Const.season_phase(world_t)
+    night = Const.night?(day_phase)
+
+    grass = Food.regrow(s.grass, @dt, season_phase)
     bushes = Enum.map(s.bushes, &Food.bush_tick(&1, @dt))
     grid = Grid.build(s.agents)
 
@@ -86,7 +92,8 @@ defmodule Meadow.Sim do
       events: s.events,
       next_id: s.next_id,
       herb_count: herb_count,
-      pred_count: pred_count
+      pred_count: pred_count,
+      night: night
     }
 
     ctx = step_all(ctx)
@@ -107,6 +114,8 @@ defmodule Meadow.Sim do
     frame =
       Meadow.Protocol.encode(
         s.tick,
+        day_phase,
+        season_phase,
         ctx.grass,
         ctx.agents,
         ctx.bushes,
@@ -123,6 +132,7 @@ defmodule Meadow.Sim do
      %{
        s
        | tick: s.tick + 1,
+         world_t: world_t,
          agents: ctx.agents,
          bushes: ctx.bushes,
          grass: ctx.grass,

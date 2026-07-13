@@ -2,6 +2,8 @@ import Foundation
 
 struct Frame {
     var tick: UInt32
+    var dayPhase: Float
+    var seasonPhase: Float
     var grassW: Int
     var grassH: Int
     var grass: [UInt8]
@@ -66,7 +68,7 @@ final class Net: NSObject {
     }
 
     private func decode(_ data: Data) {
-        guard data.count >= 10 else { return }
+        guard data.count >= 14 else { return }
 
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             let base = raw.baseAddress!
@@ -90,8 +92,10 @@ final class Net: NSObject {
             let nEvents = Int(u16())
             let gw = Int(u8())
             let gh = Int(u8())
+            let dayPhase = Float(u16()) / 65535.0
+            let seasonPhase = Float(u16()) / 65535.0
 
-            guard data.count >= 10 + gw * gh + nAgents * 10 + nEvents * 8 else { return }
+            guard data.count >= 14 + gw * gh + nAgents * 10 + nEvents * 8 else { return }
 
             var grass = [UInt8](repeating: 0, count: gw * gh)
             for i in 0..<(gw * gh) { grass[i] = u8() }
@@ -125,7 +129,8 @@ final class Net: NSObject {
                 events.append(EventWire(type: type, aux: aux, x: x, z: z))
             }
 
-            world?.ingest(Frame(tick: tick, grassW: gw, grassH: gh, grass: grass,
+            world?.ingest(Frame(tick: tick, dayPhase: dayPhase, seasonPhase: seasonPhase,
+                                grassW: gw, grassH: gh, grass: grass,
                                 agents: agents, events: events))
         }
     }

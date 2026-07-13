@@ -33,13 +33,38 @@ defmodule Meadow.Food do
     {put_elem(grass, i, a - eaten), eaten}
   end
 
-  def regrow(grass, dt) do
+  @doc """
+  Seasonal regrowth. A fertile band sweeps across the field over the season
+  cycle; inside it grass regrows at full rate, outside it regrows barely and
+  slowly withers. Herds follow the food, which produces migration without a
+  single line of migration code in the herbivore.
+  """
+  def regrow(grass, dt, season_phase) do
+    gw = Const.grass_w()
     n = tuple_size(grass)
+
+    # Band center sweeps -0.8..0.8 of the half-field and back.
+    band_x = Const.field_x() * 0.8 * :math.sin(2 * :math.pi() * season_phase)
+    width = Const.field_x() * 0.55
+
+    # Precompute one fertility factor per grid column.
+    factors =
+      List.to_tuple(
+        for cx <- 0..(gw - 1) do
+          x = (cx + 0.5) / gw * 2 * Const.field_x() - Const.field_x()
+          d = (x - band_x) / width
+          0.28 + 0.72 * :math.exp(-d * d)
+        end
+      )
 
     List.to_tuple(
       for i <- 0..(n - 1) do
+        f = elem(factors, rem(i, gw))
         a = max(elem(grass, i), @seed)
-        min(a + @regrow * a * (1.0 - a) * dt, 1.0)
+        a = a + @regrow * f * a * (1.0 - a) * dt
+        # barren zone withers toward a dry floor
+        a = a - (1.0 - f) * 0.006 * dt * max(a - 0.12, 0.0)
+        min(max(a, @seed), 1.0)
       end
     )
   end

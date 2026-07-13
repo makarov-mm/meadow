@@ -17,10 +17,28 @@ defmodule Meadow.Const do
   def grass_h, do: 24
 
   def herb_cap, do: 240
-  def pred_cap, do: 14
+  def pred_cap, do: 12
 
   def herb_min, do: 12
   def pred_min, do: 2
+
+  # World clock. A full day lasts @day_len sim-seconds (roughly two thirds
+  # daylight, one third night via the sun elevation curve). A season sweep
+  # takes @season_len sim-seconds: the fertile band crosses the field and
+  # comes back, so one full migration cycle per season period.
+  def day_len, do: 180.0
+  def season_len, do: 600.0
+
+  @doc "0..1 phase of the day. 0 is dawn, 0.25 noon, 0.5 dusk, 0.75 midnight."
+  def day_phase(world_t), do: :math.fmod(world_t, day_len()) / day_len()
+
+  @doc "0..1 phase of the season cycle."
+  def season_phase(world_t), do: :math.fmod(world_t, season_len()) / season_len()
+
+  @doc "Sun elevation, -1..1. Negative is night."
+  def sun_elevation(day_phase), do: :math.sin(2 * :math.pi() * day_phase)
+
+  def night?(day_phase), do: sun_elevation(day_phase) < -0.08
 
   @doc "Signed pond field: < 1 inside the ellipse."
   def pond_field(x, z) do

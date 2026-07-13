@@ -3,14 +3,15 @@ defmodule Meadow.Protocol do
   Binary frame, little-endian:
 
     header:  tick u32 | n_agents u16 | n_events u16 | grass_w u8 | grass_h u8
+             | day_phase u16 | season_phase u16
     grass:   grass_w * grass_h bytes, amount 0..255
     agent:   id u16 | flags u8 | scale u8 | x i16 | z i16 | heading i16   (10 B)
     event:   type u8 | aux u8 | x i16 | z i16 | extra u16                 (8 B)
 
-  flags: bits 0-1 species (0 herbivore, 1 predator, 2 bush),
-         bits 2-4 state (0 head down, 1 walk, 2 run, 3 dead, 4 idle, 5 eat).
-  scale: model scale * 200 for animals (calves grow), berries * 40 for bushes.
-  Positions are fixed-point 1/64 m. Heading is rad * 10430.
+  Phases are 0..65535 mapped onto 0..1. flags: bits 0-1 species (0 herbivore,
+  1 predator, 2 bush), bits 2-4 state (0 head down, 1 walk, 2 run, 3 dead,
+  4 idle, 5 eat). scale: model scale * 200 for animals (calves grow), berries
+  * 40 for bushes. Positions are fixed-point 1/64 m. Heading is rad * 10430.
   Event types: 0 kill, 1 birth (aux = species), 2 starvation (aux = species),
   3 berry eaten, 4 hunt started.
   """
@@ -18,7 +19,7 @@ defmodule Meadow.Protocol do
 
   @max_events 200
 
-  def encode(tick, grass, agents, bushes, events) do
+  def encode(tick, day_phase, season_phase, grass, agents, bushes, events) do
     events = Enum.take(events, @max_events)
     grass_bin = Meadow.Food.encode(grass)
 
@@ -31,9 +32,12 @@ defmodule Meadow.Protocol do
     ebin = for e <- events, into: <<>>, do: event_bin(e)
 
     n = map_size(agents) + length(bushes)
+    dp = trunc(day_phase * 65535)
+    sp = trunc(season_phase * 65535)
 
     <<tick::32-little, n::16-little, length(events)::16-little, Meadow.Const.grass_w()::8,
-      Meadow.Const.grass_h()::8>> <> grass_bin <> abin <> bbin <> ebin
+      Meadow.Const.grass_h()::8, dp::16-little, sp::16-little>> <> grass_bin <> abin <> bbin <>
+      ebin
   end
 
   defp agent_bin(a) do

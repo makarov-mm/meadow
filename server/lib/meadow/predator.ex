@@ -58,7 +58,8 @@ defmodule Meadow.Predator do
   end
 
   defp live(a, ctx) do
-    hungry = a.energy < @hungry_below
+    threshold = if ctx.night, do: @hungry_below + 40.0, else: @hungry_below
+    hungry = a.energy < threshold
 
     {a, ctx} =
       cond do
