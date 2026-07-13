@@ -18,7 +18,7 @@ through energy economics, and the camera flies around on its own finding the
 drama: chases, kills, births.
 
 ## Screenshot
-![Screenshot](screenshot.png)
+![Screenshot](screenshot.jpg)
 
 Same architecture as my battle simulation project: authoritative **Elixir**
 server, **Swift + Metal** macOS client that only renders interpolated state,
